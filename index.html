@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Simulatore COX e Mediatori — Paracetamolo, Ibuprofene, Aspirina</title>
+<style>
+  :root{
+    --bg:#0f1221;
+    --panel:#161a2e;
+    --ink:#e6e7ee;
+    --muted:#9aa3b2;
+    --accent:#7cc6ff;
+    --good:#41d695;
+    --warn:#ffce5a;
+    --bad:#ff6b6b;
+  }
+  html,body{height:100%;}
+  body{
+    margin:0; background:linear-gradient(180deg,#0b0e1a,#0f1221 35%,#0f1221);
+    color:var(--ink); font:15px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
+    display:flex; align-items:center; justify-content:center; padding:18px;
+  }
+  .app{
+    width:min(1100px,100%); background:var(--panel); border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.06);
+  }
+  header{
+    padding:16px 18px 8px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  }
+  header h1{font-size:18px; margin:0; letter-spacing:.2px}
+  header .sub{color:var(--muted); font-size:13px}
+  .controls{
+    display:flex; gap:8px; flex-wrap:wrap;
+  }
+  button{
+    appearance:none; border:0; border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer;
+    background:#222845; color:#eaf3ff; transition:transform .05s ease, box-shadow .2s ease, background .2s ease;
+    box-shadow:0 1px 0 rgba(255,255,255,.03), 0 6px 16px rgba(0,0,0,.25);
+  }
+  button:hover{transform:translateY(-1px)}
+  button:active{transform:translateY(0)}
+  .parac{background:linear-gradient(135deg,#4b6fff,#7cc6ff)}
+  .ibu{background:linear-gradient(135deg,#845ef7,#b197fc)}
+  .asa{background:linear-gradient(135deg,#ff6b6b,#ffa8a8)}
+  .reset{background:#2a2f52}
+  .grid{
+    display:grid; grid-template-columns: 2fr 1fr; gap:12px; padding:0 18px 18px;
+  }
+  .card{
+    background:#121630; border:1px solid rgba(255,255,255,.06); border-radius:14px; padding:12px; position:relative;
+  }
+  .card h2{margin:0 0 8px 0; font-size:14px; color:#cdd6f4; letter-spacing:.3px}
+  .legend{display:flex; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:12px; margin:4px 0 6px}
+  .dot{display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px}
+  .txa{background:var(--bad)}
+  .pgi{background:var(--good)}
+  .pge{background:var(--warn)}
+  .cox1{background:#f4a261}
+  .cox2{background:#6bc1ff}
+  .readouts{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px}
+  .readout{background:#0f1330; border:1px solid rgba(255,255,255,.06); border-radius:10px; padding:10px}
+  .readout .label{font-size:12px; color:var(--muted)}
+  .readout .value{font:600 18px/1.2 ui-rounded, system-ui; margin-top:6px}
+  .barwrap{height:150px; display:flex; align-items:flex-end; gap:12px; padding:4px 6px 0; border:1px dashed rgba(255,255,255,.08); border-radius:10px}
+  .bar{width:24px; border-radius:6px 6px 0 0; background:linear-gradient(#ffffff22,#ffffff11); position:relative; overflow:hidden}
+  .bar::after{content:""; position:absolute; inset:auto 0 0 0; background:currentColor; opacity:.9}
+  .barlabel{font-size:12px; text-align:center; color:var(--muted); margin-top:4px}
+  .tips{color:#aab3c7; font-size:12px; margin-top:8px}
+  .foot{padding:8px 18px 14px; color:#93a0b8; font-size:12px}
+  .kbd{padding:.1em .4em; border:1px solid rgba(255,255,255,.18); border-bottom-width:2px; border-radius:6px; background:#0e1230; font:600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
+  svg{width:100%; height:auto; display:block}
+  /* High-contrast focus */
+  button:focus{outline:2px solid #8ecaff; outline-offset:2px}
+</style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="Simulatore COX e mediatori infiammatori">
+    <header>
+      <div>
+        <h1>COX & Mediatori — Simulatore interattivo</h1>
+        <div class="sub">Premi un farmaco e osserva come cambiano vaso, piastrine e mediatori.</div>
+      </div>
+      <div class="controls" aria-label="Comandi">
+        <button class="parac" id="btnParacetamol" title="Riduce soprattutto PGE₂ (centrale), impatto minimo su TXA₂/PGI₂."><span aria-hidden="true">🟦</span> Paracetamolo</button>
+        <button class="ibu" id="btnIbuprofen" title="FANS non selettivo reversibile: ↓ COX-1 e COX-2 → ↓ TXA₂, ↓ PGE₂, ↓ PGI₂."><span aria-hidden="true">🟪</span> Ibuprofene</button>
+        <button class="asa" id="btnAspirin" title="Aspirina: inibizione irreversibile, più marcata su COX-1 piastrinica."><span aria-hidden="true">🟥</span> Aspirina</button>
+        <button class="reset" id="btnReset" title="Torna ai valori basali."><span aria-hidden="true">↺</span> Reset</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Vaso & piastrine</h2>
+        <div class="legend" aria-hidden="true">
+          <span><span class="dot cox1"></span>COX-1</span>
+          <span><span class="dot cox2"></span>COX-2</span>
+          <span><span class="dot txa"></span>TXA₂ (pro-aggregante / vasocostr.)</span>
+          <span><span class="dot pgi"></span>PGI₂ (anti-aggregante / vasodilat.)</span>
+          <span><span class="dot pge"></span>PGE₂ (dolore/febbre/vasodilataz.)</span>
+        </div>
+
+        <!-- VISUAL: vaso sanguigno, piastrine, COX1/2, flussi -->
+        <svg id="viz" viewBox="0 0 900 420" role="img" aria-label="Rappresentazione grafica del vaso, piastrine e attività enzimatiche">
+          <defs>
+            <linearGradient id="blood" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#9b1d2d"/>
+              <stop offset="100%" stop-color="#5a0f18"/>
+            </linearGradient>
+            <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="2"/>
+            </filter>
+          </defs>
+
+          <!-- parete vasale (si dilata/contrae in altezza) -->
+          <g id="vesselGroup" transform="translate(60,80)">
+            <rect id="vessel" x="0" y="0" rx="40" ry="40" width="780" height="180" fill="url(#blood)" stroke="#ffccd0" stroke-opacity=".25" stroke-width="3"/>
+            <!-- piastrine (cerchi) -->
+            <g id="platelets"></g>
+          </g>
+
+          <!-- COX-1 e COX-2 come enzimi con alone -->
+          <g id="enzymes">
+            <g transform="translate(120,330)">
+              <circle id="cox1" r="26" fill="#f4a261" opacity="0.95" filter="url(#soft)"></circle>
+              <text x="0" y="5" text-anchor="middle" font-size="12" fill="#161a2e" font-weight="700">COX-1</text>
+            </g>
+            <g transform="translate(240,330)">
+              <circle id="cox2" r="26" fill="#6bc1ff" opacity="0.95" filter="url(#soft)"></circle>
+              <text x="0" y="5" text-anchor="middle" font-size="12" fill="#0b1220" font-weight="700">COX-2</text>
+            </g>
+          </g>
+
+          <!-- Barre mediatori -->
+          <g id="bars" transform="translate(520,296)">
+            <!-- TXA2 -->
+            <g transform="translate(0,0)">
+              <rect class="bar" id="barTXA" x="0" y="-0" width="26" height="0" fill="none" stroke="none" color="#ff6b6b"></rect>
+              <text class="barlabel" x="0" y="20" text-anchor="start" fill="#b5becf" font-size="12">TXA₂</text>
+            </g>
+            <!-- PGI2 -->
+            <g transform="translate(60,0)">
+              <rect class="bar" id="barPGI" x="0" y="-0" width="26" height="0" fill="none" stroke="none" color="#41d695"></rect>
+              <text class="barlabel" x="0" y="20" text-anchor="start" fill="#b5becf" font-size="12">PGI₂</text>
+            </g>
+            <!-- PGE2 -->
+            <g transform="translate(120,0)">
+              <rect class="bar" id="barPGE" x="0" y="-0" width="26" height="0" fill="none" stroke="none" color="#ffce5a"></rect>
+              <text class="barlabel" x="0" y="20" text-anchor="start" fill="#b5becf" font-size="12">PGE₂</text>
+            </g>
+          </g>
+
+          <!-- Etichette laterali -->
+          <g font-size="12" fill="#aab3c7">
+            <text x="60" y="70">Vaso sanguigno</text>
+            <text x="520" y="270">Mediatori (altezza = livello relativo)</text>
+          </g>
+        </svg>
+
+        <div class="readouts" aria-live="polite">
+          <div class="readout">
+            <div class="label">Tono vasale</div>
+            <div class="value" id="outTone">—</div>
+          </div>
+          <div class="readout">
+            <div class="label">Aggregazione piastrinica</div>
+            <div class="value" id="outAgg">—</div>
+          </div>
+          <div class="readout">
+            <div class="label">Dolore/febbre (PGE₂)</div>
+            <div class="value" id="outPain">—</div>
+          </div>
+        </div>
+
+        <div class="tips">
+          Suggerimenti: puoi anche usare tastiera — <span class="kbd">P</span> (Paracetamolo), <span class="kbd">I</span> (Ibuprofene), <span class="kbd">A</span> (Aspirina), <span class="kbd">R</span> (Reset).
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Come funziona (modello semplificato)</h2>
+        <ul style="margin:8px 0 8px 18px; color:#cbd3e6;">
+          <li><strong>COX-1</strong> (piastrine) → <span class="dot txa"></span> TXA₂ (↑ aggregazione, ↑ vasocostrizione).</li>
+          <li><strong>COX-2</strong> (endotelio, tessuti) → <span class="dot pge"></span> PGE₂ (dolore/febbre/vasodilatazione) e <span class="dot pgi"></span> PGI₂ (↓ aggregazione, ↑ vasodilatazione).</li>
+          <li><strong>Paracetamolo</strong>: riduce soprattutto <em>PGE₂</em> (centrale), impatto minimo su TXA₂/PGI₂.</li>
+          <li><strong>Ibuprofene</strong>: inibizione <em>reversibile</em> di COX-1/COX-2 → calano tutti i mediatori.</li>
+          <li><strong>Aspirina</strong>: inibizione <em>irreversibile</em>, più su COX-1 piastrinica → effetto anti-aggregante marcato e più duraturo.</li>
+        </ul>
+        <p style="color:#93a0b8; font-size:13px; margin:10px 0 0;">
+          I livelli tornano gradualmente verso il basale (wash-out). Aspirina recupera più lentamente per simulare il ricambio piastrinico.
+        </p>
+
+        <div class="barwrap" style="margin-top:12px;">
+          <div style="text-align:center;">
+            <div class="bar" style="color:#f4a261; height:100px; width:12px;"></div>
+            <div class="barlabel">COX-1</div>
+          </div>
+          <div style="text-align:center;">
+            <div class="bar" style="color:#6bc1ff; height:100px; width:12px;"></div>
+            <div class="barlabel">COX-2</div>
+          </div>
+          <div style="text-align:center;">
+            <div class="bar" style="color:#ff6b6b; height:70px; width:12px;"></div>
+            <div class="barlabel">TXA₂</div>
+          </div>
+          <div style="text-align:center;">
+            <div class="bar" style="color:#41d695; height:70px; width:12px;"></div>
+            <div class="barlabel">PGI₂</div>
+          </div>
+          <div style="text-align:center;">
+            <div class="bar" style="color:#ffce5a; height:70px; width:12px;"></div>
+            <div class="barlabel">PGE₂</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      ⚠️ Simulazione didattica, semplificata e non clinica. Non usare per decisioni mediche.
+    </div>
+  </div>
+
+<script>
+/* ======== MODELLO ======== */
+const svg = document.getElementById('viz');
+const vessel = document.getElementById('vessel');
+const plateletsGroup = document.getElementById('platelets');
+const cox1Node = document.getElementById('cox1');
+const cox2Node = document.getElementById('cox2');
+const barTXA = document.getElementById('barTXA');
+const barPGI = document.getElementById('barPGI');
+const barPGE = document.getElementById('barPGE');
+const outTone = document.getElementById('outTone');
+const outAgg = document.getElementById('outAgg');
+const outPain = document.getElementById('outPain');
+
+const buttons = {
+  paracetamol: document.getElementById('btnParacetamol'),
+  ibuprofen: document.getElementById('btnIbuprofen'),
+  aspirin: document.getElementById('btnAspirin'),
+  reset: document.getElementById('btnReset')
+};
+
+const BASE = { cox1:1.0, cox2:1.0 };
+let effects = []; // array di effetti attivi (ognuno con decadimento)
+
+function now(){ return performance.now()/1000; } // secondi
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+// Inizializza piastrine
+const N_PLATELETS = 70;
+const platelets = [];
+function initPlatelets(){
+  plateletsGroup.innerHTML = '';
+  for(let i=0;i<N_PLATELETS;i++){
+    const cx = 20 + Math.random()*740;
+    const cy = 90 + (Math.random()*160 - 80);
+    const r = 4 + Math.random()*2.5;
+    const node = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    node.setAttribute('cx', cx);
+    node.setAttribute('cy', cy);
+    node.setAttribute('r', r);
+    node.setAttribute('fill', '#f7d8dd');
+    node.setAttribute('opacity', .9);
+    plateletsGroup.appendChild(node);
+    platelets.push({
+      node, x:cx, y0:cy, r, speed: 40 + Math.random()*40, wob: Math.random()*Math.PI*2
+    });
+  }
+}
+initPlatelets();
+
+/* Effetti farmaco:
+   Ogni effetto = {name, co1, co2, pge2extra, halfLife, t0, level}
+   - co1/co2: frazione di inibizione (0..1)
+   - pge2extra: riduzione extra SOLO su PGE2 (paracetamolo)
+   - halfLife: secondi (decadimento esponenziale)
+*/
+function addEffect(e){
+  e.t0 = now();
+  e.level = 1; // intensità iniziale
+  effects.push(e);
+}
+
+function administerParacetamol(){
+  addEffect({ name:'Paracetamolo', co1:0.0, co2:0.0, pge2extra:0.70, halfLife:28 });
+  flashButton(buttons.paracetamol);
+}
+function administerIbuprofen(){
+  addEffect({ name:'Ibuprofene', co1:0.60, co2:0.60, pge2extra:0.0, halfLife:36 });
+  flashButton(buttons.ibuprofen);
+}
+function administerAspirin(){
+  addEffect({ name:'Aspirina', co1:0.90, co2:0.40, pge2extra:0.0, halfLife:300 }); // recupero lento
+  flashButton(buttons.aspirin);
+}
+function resetAll(){
+  effects = [];
+  flashButton(buttons.reset);
+}
+
+buttons.paracetamol.addEventListener('click', administerParacetamol);
+buttons.ibuprofen.addEventListener('click', administerIbuprofen);
+buttons.aspirin.addEventListener('click', administerAspirin);
+buttons.reset.addEventListener('click', resetAll);
+
+// scorciatoie tastiera
+window.addEventListener('keydown', (e)=>{
+  if(e.key.toLowerCase()==='p') administerParacetamol();
+  if(e.key.toLowerCase()==='i') administerIbuprofen();
+  if(e.key.toLowerCase()==='a') administerAspirin();
+  if(e.key.toLowerCase()==='r') resetAll();
+});
+
+// feedback visivo sui pulsanti
+function flashButton(btn){
+  btn.animate([
+    { transform:'translateY(0)', boxShadow:'0 1px 0 rgba(255,255,255,.03), 0 6px 16px rgba(0,0,0,.25)' },
+    { transform:'translateY(-2px)', boxShadow:'0 2px 0 rgba(255,255,255,.08), 0 14px 24px rgba(0,0,0,.35)' },
+    { transform:'translateY(0)'}
+  ], {duration:320, easing:'ease-out'});
+}
+
+/* Combinazione effetti: inibizione complessiva = 1 - Π(1 - inib_i * livello_i) */
+function combinedInhibition(){
+  let inh1 = 0, inh2 = 0, pge2extra = 0;
+  let remain1 = 1, remain2 = 1, remainE = 1;
+  const t = now();
+  // filtra ed aggiorna livelli (decadimento)
+  effects = effects.filter(e=>{
+    const age = t - e.t0;
+    const k = Math.pow(0.5, age / Math.max(1e-3, e.halfLife));
+    e.level = k;
+    // scarta effetti praticamente esauriti
+    return e.level > 0.02;
+  });
+  for(const e of effects){
+    remain1 *= (1 - e.co1 * e.level);
+    remain2 *= (1 - e.co2 * e.level);
+    remainE *= (1 - e.pge2extra * e.level);
+  }
+  inh1 = 1 - remain1;
+  inh2 = 1 - remain2;
+  pge2extra = 1 - remainE;
+  return {inh1, inh2, pge2extra};
+}
+
+function computeMediators(){
+  const {inh1, inh2, pge2extra} = combinedInhibition();
+  const act1 = BASE.cox1 * (1 - inh1);
+  const act2 = BASE.cox2 * (1 - inh2);
+  // livelli mediatori (normalizzati ~0..1.2)
+  const TXA2 = clamp(1.0 * act1, 0, 1.2);
+  const PGI2 = clamp(0.9 * act2 + 0.1 * act1, 0, 1.2); // piccola quota da COX-1
+  let PGE2 = clamp(1.0 * act2, 0, 1.2);
+  // riduzione selettiva da paracetamolo
+  PGE2 = clamp(PGE2 * (1 - pge2extra), 0, 1.2);
+  return {TXA2, PGI2, PGE2, act1, act2};
+}
+
+function updateBars({TXA2, PGI2, PGE2}){
+  const H = 140; // altezza max barre
+  barTXA.setAttribute('height', H*TXA2);
+  barTXA.setAttribute('y', -H*TXA2);
+  barPGI.setAttribute('height', H*PGI2);
+  barPGI.setAttribute('y', -H*PGI2);
+  barPGE.setAttribute('height', H*PGE2);
+  barPGE.setAttribute('y', -H*PGE2);
+}
+
+function updateEnzymes({act1, act2}){
+  // opacità ~ attività residua
+  const o1 = 0.35 + 0.6 * clamp(act1,0,1);
+  const o2 = 0.35 + 0.6 * clamp(act2,0,1);
+  cox1Node.setAttribute('opacity', o1.toFixed(2));
+  cox2Node.setAttribute('opacity', o2.toFixed(2));
+}
+
+function updateVesselAndPlatelets({TXA2, PGI2, PGE2}){
+  // Tono vasale: PGI2 dilata, TXA2 costringe (PGE2 contribuisce lievemente alla dilatazione)
+  const toneIndex = clamp(0.5 + 0.4*(PGI2 + 0.3*PGE2) - 0.6*TXA2, 0.0, 1.0);
+  const baseH = 180;
+  const height = 110 + 90 * toneIndex; // 110..200 px
+  vessel.setAttribute('height', height);
+  // Centra verticalmente nel gruppo
+  const y = (180 - height)/2;
+  vessel.setAttribute('y', y);
+
+  // Aggregazione piastrinica: cresce con TXA2 e cala con PGI2
+  const aggRaw = clamp(0.15 + 0.85*(TXA2 / (PGI2 + 0.35)), 0, 1);
+  const agg = aggRaw;
+
+  // Muovi piastrine: più aggregazione → convergono verso centro e leggermente più lente
+  const centerY = 90; // centro del vaso nel group
+  const t = now();
+  for(const p of platelets){
+    // avanzamento lungo x
+    p.x += (p.speed * (0.7 + 0.3*(1-agg))) * 0.016; // ~60fps
+    if(p.x > 760) p.x = 20;
+    // wobble per moto "fluido"
+    const wob = Math.sin(t*2 + p.wob)* (6 + 10*(1-agg));
+    const targetY = centerY + (p.y0 - centerY)*(1-agg) + wob;
+    p.node.setAttribute('cx', p.x);
+    p.node.setAttribute('cy', targetY);
+    // colore leggermente più "attivo" con aggregazione
+    const alpha = 0.7 + 0.3*agg;
+    p.node.setAttribute('opacity', alpha.toFixed(2));
+    p.node.setAttribute('fill', agg>0.65 ? '#ffd2d7' : '#f7d8dd');
+  }
+
+  // Output testuale
+  const toneText = toneIndex>0.66 ? 'Vasodilatazione' : (toneIndex<0.33 ? 'Vasocostrizione' : 'Tono intermedio');
+  outTone.textContent = `${toneText} (${Math.round(toneIndex*100)}%)`;
+  outAgg.textContent = `${Math.round(agg*100)}%`;
+  outPain.textContent = `${Math.round(clamp(PGE2/1.0,0,1)*100)}%`;
+}
+
+let last = now();
+function tick(){
+  const mediators = computeMediators();
+  updateBars(mediators);
+  updateEnzymes(mediators);
+  updateVesselAndPlatelets(mediators);
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>
